@@ -1,189 +1,113 @@
 import json
-import os
+import time
 from datetime import datetime
+import os
 import requests
+from src.metrics import MetricsManager
+from src.alert_manager import AlertManager
 
 class MonitoringSystem:
-    def __init__(self, config=None, slack_webhook_url=None):
-        """
-        Initialize MonitoringSystem with configuration.
-        
-        Args:
-            config: Config object (preferred)
-            slack_webhook_url: Slack webhook URL (deprecated, for backward compatibility)
-        """
+    def __init__(self, config=None):
+        self.config = config
+        # Use config for paths if available, else defaults
         if config:
-            self.config = config
-            self.slack_webhook_url = config.monitoring.slack_webhook_url
-            metrics_dir = config.get_absolute_path(config.paths.logs_dir)
-            self.metrics_file = str(metrics_dir / 'metrics.json')
+            self.metrics_file = config.monitoring.metrics_path
+            self.dashboard_file = config.monitoring.dashboard_path
+            self.alert_manager = AlertManager(config)
         else:
-            # Backward compatibility
-            self.config = None
-            self.slack_webhook_url = slack_webhook_url
-            self.metrics_file = 'E:\\self_healing_pipeline\\logs\\metrics.json'
-        self.metrics = self._load_metrics()
-    
-    def _load_metrics(self):
-        '''Load existing metrics or create new.'''
+            self.metrics_file = r'E:\self_healing_pipeline\logs\metrics.json'
+            self.dashboard_file = r'E:\self_healing_pipeline\logs\dashboard.html'
+            # Dummy alert manager if no config
+            from src.config_schema import Config
+            self.alert_manager = AlertManager(Config())
+
+        self.metrics_manager = MetricsManager()
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self.metrics_file), exist_ok=True)
+        
+        # Load existing history
         if os.path.exists(self.metrics_file):
             with open(self.metrics_file, 'r') as f:
-                return json.load(f)
-        return {
-            'total_failures': 0,
-            'total_heals': 0,
-            'successful_heals': 0,
-            'failed_heals': 0,
-            'healing_history': []
-        }
-    
-    def _save_metrics(self):
-        '''Save metrics to file.'''
-        with open(self.metrics_file, 'w') as f:
-            json.dump(self.metrics, f, indent=2)
-    
-    def record_failure(self, error_message):
-        '''Record a pipeline failure.'''
-        self.metrics['total_failures'] += 1
-        print(f" Metrics: Total failures = {self.metrics['total_failures']}")
-    
-    def record_healing_attempt(self, success, attempts, error_log):
-        '''Record a healing attempt.'''
-        self.metrics['total_heals'] += 1
-        if success:
-            self.metrics['successful_heals'] += 1
+                self.history = json.load(f)
         else:
-            self.metrics['failed_heals'] += 1
-        
-        self.metrics['healing_history'].append({
-            'timestamp': datetime.now().isoformat(),
-            'success': success,
-            'attempts': attempts,
-            'error': error_log[:200]  # Truncate for storage
-        })
-        
-        self._save_metrics()
-        
-        # Calculate success rate
-        success_rate = (self.metrics['successful_heals'] / self.metrics['total_heals'] * 100) if self.metrics['total_heals'] > 0 else 0
-        print(f' Metrics: Success Rate = {success_rate:.1f}%')
-        
-        # Send Slack notification
-        if success:
-            self._send_slack_notification(f' Pipeline healed successfully in {attempts} attempt(s)!', 'good')
-        else:
-            self._send_slack_notification(f' Pipeline healing failed after {attempts} attempts.', 'danger')
-    
-    def _send_slack_notification(self, message, color='good'):
-        '''Send notification to Slack.'''
-        if not self.slack_webhook_url:
-            print(f' Slack (Mock): {message}')
-            return
-        
-        payload = {
-            'attachments': [{
-                'color': color,
-                'text': message,
-                'footer': 'Self-Healing Pipeline',
-                'ts': int(datetime.now().timestamp())
-            }]
-        }
-        
-        try:
-            response = requests.post(self.slack_webhook_url, json=payload)
-            if response.status_code == 200:
-                print(f' Slack notification sent: {message}')
-            else:
-                print(f' Slack notification failed: {response.status_code}')
-        except Exception as e:
-            print(f' Slack notification error: {e}')
-    
-    def generate_dashboard(self):
-        '''Generate HTML dashboard.'''
-        success_rate = (self.metrics['successful_heals'] / self.metrics['total_heals'] * 100) if self.metrics['total_heals'] > 0 else 0
-        
-        html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <title>Self-Healing Pipeline Dashboard</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        h1 {{ color: #333; }}
-        .metric {{ display: inline-block; margin: 20px; padding: 20px; background: #f9f9f9; border-radius: 4px; min-width: 200px; }}
-        .metric-value {{ font-size: 36px; font-weight: bold; color: #2196F3; }}
-        .metric-label {{ color: #666; margin-top: 10px; }}
-        .success {{ color: #4CAF50; }}
-        .failure {{ color: #f44336; }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-        th {{ background-color: #2196F3; color: white; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1> Self-Healing Pipeline Dashboard</h1>
-        
-        <div class="metric">
-            <div class="metric-value">{self.metrics['total_failures']}</div>
-            <div class="metric-label">Total Failures</div>
-        </div>
-        
-        <div class="metric">
-            <div class="metric-value class="success">{self.metrics['successful_heals']}</div>
-            <div class="metric-label">Successful Heals</div>
-        </div>
-        
-        <div class="metric">
-            <div class="metric-value class="failure">{self.metrics['failed_heals']}</div>
-            <div class="metric-label">Failed Heals</div>
-        </div>
-        
-        <div class="metric">
-            <div class="metric-value">{success_rate:.1f}%</div>
-            <div class="metric-label">Success Rate</div>
-        </div>
-        
-        <h2>Recent Healing History</h2>
-        <table>
-            <tr>
-                <th>Timestamp</th>
-                <th>Status</th>
-                <th>Attempts</th>
-                <th>Error (Truncated)</th>
-            </tr>
-'''
-        
-        for entry in reversed(self.metrics['healing_history'][-10:]):  # Last 10
-            status = ' Success' if entry['success'] else ' Failed'
-            html += f'''
-            <tr>
-                <td>{entry['timestamp']}</td>
-                <td>{status}</td>
-                <td>{entry['attempts']}</td>
-                <td>{entry['error']}</td>
-            </tr>
-'''
-        
-        html += '''
-        </table>
-    </div>
-</body>
-</html>
-'''
-        
-        if self.config:
-            dashboard_dir = self.config.get_absolute_path(self.config.paths.dashboard_dir)
-            dashboard_path = str(dashboard_dir / 'index.html')
-        else:
-            dashboard_path = 'E:\\self_healing_pipeline\\dashboard\\index.html'
-            
-        with open(dashboard_path, 'w') as f:
-            f.write(html)
-        
-        print(f' Dashboard generated: {dashboard_path}')
-        return dashboard_path
+            self.history = []
 
-if __name__ == '__main__':
-    monitor = MonitoringSystem()
-    monitor.generate_dashboard()
+    def log_error(self, error_msg):
+        """Log an error occurrence."""
+        entry = {
+            'timestamp': datetime.now().isoformat(),
+            'type': 'ERROR',
+            'message': error_msg
+        }
+        self.history.append(entry)
+        self._save()
+        
+        # Prometheus
+        self.metrics_manager.record_error('unknown') # We could parse type if needed
+        
+        # Alerting
+        self.alert_manager.send_alert("Pipeline Error", error_msg, level="error")
+
+    def log_healing_attempt(self, success, error_log, fix_code):
+        """Log a healing attempt."""
+        entry = {
+            'timestamp': datetime.now().isoformat(),
+            'type': 'HEALING',
+            'success': success,
+            'error': error_log,
+            'fix': fix_code
+        }
+        self.history.append(entry)
+        self._save()
+        
+        # Prometheus
+        status = 'success' if success else 'failure'
+        self.metrics_manager.record_healing(status)
+        
+        # Alerting
+        if success:
+            self.alert_manager.send_alert("Healing Successful", "AI successfully fixed the pipeline.", level="info")
+        else:
+            self.alert_manager.send_alert("Healing Failed", "AI attempted to fix the pipeline but failed.", level="error")
+
+    def _save(self):
+        with open(self.metrics_file, 'w') as f:
+            json.dump(self.history, f, indent=2)
+        self.generate_dashboard()
+
+    def generate_dashboard(self):
+        """Generate a simple HTML dashboard."""
+        html = f"""
+        <html>
+        <head>
+            <title>Pipeline Health Dashboard</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .card {{ border: 1px solid #ccc; padding: 15px; margin-bottom: 10px; border-radius: 5px; }}
+                .success {{ background-color: #d4edda; border-color: #c3e6cb; }}
+                .error {{ background-color: #f8d7da; border-color: #f5c6cb; }}
+                h1 {{ color: #333; }}
+            </style>
+        </head>
+        <body>
+            <h1>Self-Healing Pipeline Dashboard</h1>
+            <p>Last Updated: {datetime.now()}</p>
+            <p><a href="http://localhost:8000/metrics">Prometheus Metrics</a></p>
+            <hr>
+            <h2>Recent Events</h2>
+        """
+        
+        for event in reversed(self.history[-10:]):
+            color_class = 'success' if event.get('success', False) or event['type'] == 'INFO' else 'error'
+            html += f"""
+            <div class="card {color_class}">
+                <strong>{event['timestamp']}</strong> - {event['type']}<br>
+                <pre>{event.get('message') or event.get('error')}</pre>
+            </div>
+            """
+            
+        html += "</body></html>"
+        
+        with open(self.dashboard_file, 'w') as f:
+            f.write(html)

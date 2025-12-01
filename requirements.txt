@@ -5,3 +5,4 @@ requests
 pydantic>=2.0.0
 pyyaml
 python-dotenv
+prometheus_client

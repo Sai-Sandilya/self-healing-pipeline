@@ -71,6 +71,8 @@ TASK: Fix the code to handle the error. Return ONLY the corrected Python code, n
                 log.write(f'ERROR: LLM call failed: {e}\n')
             return code_content
 
+from src.metrics import MetricsManager
+
 class DataDoctor:
     def __init__(self, config=None, api_key=None):
         """
@@ -92,6 +94,7 @@ class DataDoctor:
             raise ValueError('Either config or api_key is required')
         
         self.analyzer = ErrorAnalyzer()
+        self.metrics = MetricsManager()
 
     def diagnose_and_heal(self, script_path, data_path, error_log):
         print(f' Doctor is examining {script_path}...')
@@ -116,12 +119,16 @@ class DataDoctor:
         # 4. Ask LLM for a fix with diagnosis
         fixed_code = self.llm.generate_fix(error_log, code_content, data_head, diagnosis)
         
+        # Record estimated cost (very rough estimate: $0.01 per call)
+        self.metrics.record_cost(0.01)
+        
         # 5. Apply the fix
         if fixed_code != code_content:
             print(' Doctor is applying the fix...')
             with open(script_path, 'w') as f:
                 f.write(fixed_code)
             print(' Fix applied successfully!')
+            self.metrics.record_healing('success')
             return True
         else:
             print(' Doctor could not find a fix.')
@@ -130,6 +137,7 @@ class DataDoctor:
                 log.write(f'DEBUG: First 50 chars original: {code_content[:50]}\n')
                 log.write(f'DEBUG: First 50 chars fixed: {fixed_code[:50]}\n')
                 log.write(f'DEBUG: Full fixed code:\n{fixed_code}\n')
+            self.metrics.record_healing('failure')
             return False
 
 if __name__ == '__main__':

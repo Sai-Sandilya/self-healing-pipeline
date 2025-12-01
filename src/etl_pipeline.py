@@ -1,12 +1,19 @@
 import pandas as pd
+import pandas as pd
 import sys
 import os
 
 from src.validator import Validator, DataValidationError
 from src.validation_rules import NotNullRule, UniqueRule, TypeRule
 
+import time
+from src.metrics import MetricsManager
+
 def run_pipeline():
     print('Starting ETL pipeline...')
+    metrics = MetricsManager()
+    start_time = time.time()
+    
     try:
         # Ensure directories exist
         os.makedirs(r'E:\self_healing_pipeline\data\processed', exist_ok=True)
@@ -45,12 +52,19 @@ def run_pipeline():
         output_path = r'E:\self_healing_pipeline\data\processed\users_processed.csv'
         df.to_csv(output_path, index=False)
         print(f'Pipeline finished successfully. Data saved to {output_path}')
+        
+        duration = time.time() - start_time
+        metrics.record_pipeline_run('success', duration)
         return True
     except DataValidationError as e:
         print(f'Data Validation Failed:\n{e}')
+        metrics.record_error('data_validation_error')
+        metrics.record_pipeline_run('failure', time.time() - start_time)
         raise e
     except Exception as e:
         print(f'Pipeline Failed: {e}')
+        metrics.record_error(type(e).__name__)
+        metrics.record_pipeline_run('failure', time.time() - start_time)
         raise e
 
 if __name__ == '__main__':

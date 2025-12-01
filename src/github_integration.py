@@ -1,21 +1,33 @@
 from github import Github
 import os
 
+import time
+
 class GitHubIntegration:
-    def __init__(self, token, repo_name):
+    def __init__(self, config=None, token=None, repo_name=None):
         '''Initialize GitHub client.
         
         Args:
-            token: GitHub personal access token
-            repo_name: Repository name in format 'username/repo'
+            config: Config object (preferred)
+            token: GitHub personal access token (deprecated)
+            repo_name: Repository name (deprecated)
         '''
-        self.client = Github(token)
-        self.repo = self.client.get_repo(repo_name)
+        if config:
+            self.config = config
+            if not config.github.enable_github:
+                raise ValueError("GitHub integration is disabled in configuration")
+            self.client = Github(config.github.token)
+            self.repo = self.client.get_repo(config.github.repo_name)
+        elif token and repo_name:
+            self.client = Github(token)
+            self.repo = self.client.get_repo(repo_name)
+        else:
+            raise ValueError("Either config or token/repo_name must be provided")
     
     def create_healing_pr(self, file_path, fixed_code, error_log, attempt_count):
         '''Create a Pull Request with the AI-generated fix.'''
         # Create a new branch
-        branch_name = f'auto-heal-{int(__import__(\"time\").time())}'
+        branch_name = f'auto-heal-{int(time.time())}'
         base_branch = self.repo.default_branch
         sb = self.repo.get_branch(base_branch)
         self.repo.create_git_ref(ref=f'refs/heads/{branch_name}', sha=sb.commit.sha)

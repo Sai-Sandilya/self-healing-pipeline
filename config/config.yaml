@@ -1,0 +1,63 @@
+# Self-Healing Pipeline Configuration
+# This is the main configuration file for the self-healing data pipeline
+
+# Environment Configuration
+environment:
+  env: development  # Options: development, staging, production
+  debug: true
+  log_level: INFO  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Path Configuration
+paths:
+  data_dir: data/raw
+  logs_dir: logs
+  dashboard_dir: dashboard
+  backup_dir: backups
+
+# AI Configuration
+ai:
+  api_key: ${SHP_AI_API_KEY}  # Set via environment variable for security
+  base_url: https://openrouter.ai/api/v1
+  model: openai/gpt-4o-mini
+  temperature: 0.0
+  max_tokens: 4000
+  timeout: 60
+  max_retries: 3
+
+# Healing Configuration
+healing:
+  max_attempts: 3
+  enable_rollback: true
+  enable_backup: true
+  test_before_apply: true
+  backup_retention_days: 30
+
+# Monitoring Configuration
+monitoring:
+  enable_monitoring: true
+  slack_webhook_url: ${SHP_SLACK_WEBHOOK_URL}  # Optional: Set via environment variable
+  enable_dashboard: true
+  metrics_retention_days: 90
+  alert_on_failure: true
+  alert_on_success: false
+
+# GitHub Integration Configuration
+github:
+  enable_github: false
+  token: ${SHP_GITHUB_TOKEN}  # Set via environment variable if GitHub is enabled
+  repo_name: ${SHP_GITHUB_REPO}  # Format: username/repo
+  auto_create_pr: false
+
+# Security Configuration
+security:
+  enable_audit_log: true
+  mask_sensitive_data: true
+  enable_code_signing: false
+  max_code_size_kb: 500
+
+# Performance Configuration
+performance:
+  enable_caching: true
+  cache_ttl_hours: 24
+  max_parallel_healings: 1
+  rate_limit_per_minute: 10

@@ -3,23 +3,39 @@ import sys
 import os
 from openai import OpenAI
 from src.rollback_manager import RollbackManager
+from src.error_analyzer import ErrorAnalyzer, ErrorCategory
 
 class AdvancedLLM:
-    def __init__(self, api_key):
+    def __init__(self, config):
+        """Initialize LLM with configuration."""
+        self.config = config
         self.client = OpenAI(
-            api_key=api_key,
-            base_url='https://openrouter.ai/api/v1'
+            api_key=config.ai.api_key,
+            base_url=config.ai.base_url
         )
     
-    def generate_fix(self, error_log, code_content, data_head, attempt=1, previous_fix=None, previous_error=None):
+    def generate_fix(self, error_log, code_content, data_head, attempt=1, previous_fix=None, previous_error=None, diagnosis=None):
         '''Generate fix with feedback from previous attempts.'''
-        print(f' LLM: Analyzing error (Attempt {attempt}/3)...')
+        print(f'🤖 LLM: Analyzing error (Attempt {attempt}/{self.config.healing.max_attempts})...')
         
+        # Enhanced prompt with diagnosis context
+        context_str = ""
+        if diagnosis:
+            print(f'🔍 Diagnosis: {diagnosis.category.value} - {diagnosis.suggested_fix_strategy}')
+            context_str = f"""
+DIAGNOSIS:
+Category: {diagnosis.category.value}
+Context: {diagnosis.context}
+Strategy: {diagnosis.suggested_fix_strategy}
+"""
+
         if attempt == 1:
             prompt = f'''You are a data engineering expert. A Python ETL pipeline has failed.
 
 ERROR LOG:
 {error_log}
+
+{context_str}
 
 CURRENT CODE:
 {code_content}
@@ -27,7 +43,7 @@ CURRENT CODE:
 DATA COLUMNS (from CSV):
 {data_head}
 
-TASK: Fix the code to handle the new schema. Return ONLY the corrected Python code, nothing else. No explanations, no markdown formatting, just the raw Python code.'''
+TASK: Fix the code to handle the error. Return ONLY the corrected Python code, nothing else. No explanations, no markdown formatting, just the raw Python code.'''
         else:
             prompt = f'''You are a data engineering expert. Your previous fix did not work.
 
@@ -40,6 +56,8 @@ YOUR PREVIOUS FIX (Attempt {attempt-1}):
 NEW ERROR AFTER YOUR FIX:
 {previous_error}
 
+{context_str}
+
 DATA COLUMNS (from CSV):
 {data_head}
 
@@ -47,42 +65,66 @@ TASK: The previous fix failed. Analyze what went wrong and provide a BETTER fix.
 
         try:
             response = self.client.chat.completions.create(
-                model="openai/gpt-4o-mini",
+                model=self.config.ai.model,
                 messages=[
                     {"role": "system", "content": "You are a code fixing assistant. Return only valid Python code with no explanations or markdown."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0
+                temperature=self.config.ai.temperature,
+                max_tokens=self.config.ai.max_tokens,
+                timeout=self.config.ai.timeout
             )
             
             fixed_code = response.choices[0].message.content.strip()
             
             # Remove markdown code blocks if present
-            if fixed_code.startswith('`python'):
-                fixed_code = fixed_code.split('`python')[1].split('`')[0].strip()
-            elif fixed_code.startswith('`'):
-                fixed_code = fixed_code.split('`')[1].split('`')[0].strip()
+            if fixed_code.startswith('```python'):
+                fixed_code = fixed_code.split('```python')[1].split('```')[0].strip()
+            elif fixed_code.startswith('```'):
+                fixed_code = fixed_code.split('```')[1].split('```')[0].strip()
             
-            print(f' LLM: Fix generated for attempt {attempt}.')
+            print(f'✓ LLM: Fix generated for attempt {attempt}.')
             return fixed_code
             
         except Exception as e:
-            print(f' LLM: Error calling AI: {e}')
+            print(f'✗ LLM: Error calling AI: {e}')
             return code_content
 
 class AdvancedDataDoctor:
-    def __init__(self, api_key=None, max_attempts=3):
-        if api_key:
-            self.llm = AdvancedLLM(api_key)
+    def __init__(self, config=None, api_key=None, max_attempts=None):
+        """
+        Initialize AdvancedDataDoctor with configuration.
+        
+        Args:
+            config: Config object (preferred)
+            api_key: API key string (deprecated, for backward compatibility)
+            max_attempts: Max healing attempts (deprecated, use config)
+        """
+        if config:
+            self.config = config
+            self.llm = AdvancedLLM(config)
+            self.max_attempts = config.healing.max_attempts
+        elif api_key:
+            # Backward compatibility: create minimal config from API key
+            from src.config_schema import Config, AIConfig, HealingConfig
+            self.config = Config(
+                ai=AIConfig(api_key=api_key),
+                healing=HealingConfig(max_attempts=max_attempts or 3)
+            )
+            self.llm = AdvancedLLM(self.config)
+            self.max_attempts = max_attempts or 3
         else:
-            raise ValueError('API key is required')
-        self.max_attempts = max_attempts
+            raise ValueError('Either config or api_key is required')
         self.rollback_manager = RollbackManager()
+        self.analyzer = ErrorAnalyzer()
 
     def diagnose_and_heal(self, script_path, data_path, error_log):
         '''Multi-attempt healing with feedback loop and rollback.'''
         print(f' Advanced Doctor is examining {script_path}...')
         
+        # 1. Analyze the error
+        diagnosis = self.analyzer.analyze(error_log)
+
         # Create backup before any changes
         backup_path = self.rollback_manager.create_backup(script_path)
         
@@ -94,9 +136,13 @@ class AdvancedDataDoctor:
         try:
             df = pd.read_csv(data_path, nrows=2)
             data_head = str(df.columns.tolist())
+            # Also get dtypes for type mismatch context
+            data_types = str(df.dtypes.to_dict())
+            data_head += f"\nData Types: {data_types}"
         except Exception as e:
             data_head = f'Could not read data: {e}'
 
+        current_code = original_code
         previous_fix = None
         previous_error = None
         
@@ -106,16 +152,17 @@ class AdvancedDataDoctor:
             # Generate fix
             fixed_code = self.llm.generate_fix(
                 error_log, 
-                original_code if attempt == 1 else previous_fix, 
+                current_code, # Pass current_code for the LLM to consider
                 data_head, 
                 attempt, 
                 previous_fix, 
-                previous_error
+                previous_error,
+                diagnosis
             )
             
-            if fixed_code == original_code:
-                print(' LLM could not generate a fix.')
-                continue
+            if fixed_code == current_code:
+                print(' Doctor could not generate a new fix.')
+                break # Exit loop if LLM can't generate a different fix
             
             # Apply the fix
             print(' Applying fix...')
@@ -133,6 +180,7 @@ class AdvancedDataDoctor:
                 print(f' Fix failed. Error: {test_error}')
                 previous_fix = fixed_code
                 previous_error = test_error
+                current_code = fixed_code # Update current_code for the next attempt
         
         # All attempts failed, rollback
         print(f'\n All {self.max_attempts} attempts failed. Rolling back...')

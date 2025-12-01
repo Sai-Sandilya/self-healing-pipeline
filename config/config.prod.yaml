@@ -1,0 +1,54 @@
+# Production Environment Configuration
+# Optimized settings for production deployment
+
+environment:
+  env: production
+  debug: false
+  log_level: WARNING  # Less verbose logging
+
+# Production paths (can be absolute paths or cloud storage)
+paths:
+  data_dir: ${SHP_DATA_DIR}
+  logs_dir: ${SHP_LOGS_DIR}
+  dashboard_dir: ${SHP_DASHBOARD_DIR}
+  backup_dir: ${SHP_BACKUP_DIR}
+
+# Production AI settings
+ai:
+  timeout: 90  # Longer timeout for reliability
+  max_retries: 5  # More retries in production
+
+# Production healing settings
+healing:
+  max_attempts: 3
+  enable_rollback: true
+  enable_backup: true
+  test_before_apply: true
+  backup_retention_days: 90  # Longer retention
+
+# Production monitoring
+monitoring:
+  enable_monitoring: true
+  enable_dashboard: true
+  metrics_retention_days: 365  # 1 year retention
+  alert_on_failure: true
+  alert_on_success: true  # Alert on success in prod
+
+# GitHub integration enabled in production
+github:
+  enable_github: true
+  auto_create_pr: true  # Auto-create PRs for review
+
+# Production security
+security:
+  enable_audit_log: true
+  mask_sensitive_data: true
+  enable_code_signing: true  # Enable in production
+  max_code_size_kb: 500
+
+# Production performance
+performance:
+  enable_caching: true
+  cache_ttl_hours: 48  # Longer cache in prod
+  max_parallel_healings: 3  # Allow parallel healing
+  rate_limit_per_minute: 20  # Higher rate limit

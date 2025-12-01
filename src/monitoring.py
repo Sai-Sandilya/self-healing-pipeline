@@ -4,9 +4,24 @@ from datetime import datetime
 import requests
 
 class MonitoringSystem:
-    def __init__(self, slack_webhook_url=None):
-        self.slack_webhook_url = slack_webhook_url
-        self.metrics_file = 'E:\\self_healing_pipeline\\logs\\metrics.json'
+    def __init__(self, config=None, slack_webhook_url=None):
+        """
+        Initialize MonitoringSystem with configuration.
+        
+        Args:
+            config: Config object (preferred)
+            slack_webhook_url: Slack webhook URL (deprecated, for backward compatibility)
+        """
+        if config:
+            self.config = config
+            self.slack_webhook_url = config.monitoring.slack_webhook_url
+            metrics_dir = config.get_absolute_path(config.paths.logs_dir)
+            self.metrics_file = str(metrics_dir / 'metrics.json')
+        else:
+            # Backward compatibility
+            self.config = None
+            self.slack_webhook_url = slack_webhook_url
+            self.metrics_file = 'E:\\self_healing_pipeline\\logs\\metrics.json'
         self.metrics = self._load_metrics()
     
     def _load_metrics(self):
@@ -30,7 +45,7 @@ class MonitoringSystem:
     def record_failure(self, error_message):
         '''Record a pipeline failure.'''
         self.metrics['total_failures'] += 1
-        print(f' Metrics: Total failures = {self.metrics[\"total_failures\"]}')
+        print(f" Metrics: Total failures = {self.metrics['total_failures']}")
     
     def record_healing_attempt(self, success, attempts, error_log):
         '''Record a healing attempt.'''
@@ -157,7 +172,12 @@ class MonitoringSystem:
 </html>
 '''
         
-        dashboard_path = 'E:\\self_healing_pipeline\\dashboard\\index.html'
+        if self.config:
+            dashboard_dir = self.config.get_absolute_path(self.config.paths.dashboard_dir)
+            dashboard_path = str(dashboard_dir / 'index.html')
+        else:
+            dashboard_path = 'E:\\self_healing_pipeline\\dashboard\\index.html'
+            
         with open(dashboard_path, 'w') as f:
             f.write(html)
         

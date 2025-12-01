@@ -2,3 +2,6 @@ pandas
 openai
 PyGithub
 requests
+pydantic>=2.0.0
+pyyaml
+python-dotenv

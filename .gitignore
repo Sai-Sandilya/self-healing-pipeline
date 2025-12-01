@@ -4,11 +4,20 @@ __pycache__/
 *.pyd
 .Python
 *.so
+
+# Environment and secrets
+.env
+.env.local
+config/secrets.yaml
+config/*.local.yaml
+
+# Backups
+backups/
+
 *.egg
 *.egg-info/
 dist/
 build/
-.env
 .venv
 venv/
 data/processed/

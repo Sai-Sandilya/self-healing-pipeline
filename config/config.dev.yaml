@@ -1,0 +1,41 @@
+# Development Environment Configuration
+# Overrides for local development
+
+environment:
+  env: development
+  debug: true
+  log_level: DEBUG
+
+# Use local paths for development
+paths:
+  data_dir: data/raw
+  logs_dir: logs
+  dashboard_dir: dashboard
+  backup_dir: backups
+
+# Development AI settings (can use test API key)
+ai:
+  timeout: 30  # Shorter timeout for dev
+  max_retries: 2
+
+# Healing settings for faster iteration
+healing:
+  max_attempts: 2  # Fewer attempts in dev
+  backup_retention_days: 7  # Shorter retention
+
+# Monitoring settings for development
+monitoring:
+  enable_monitoring: true
+  enable_dashboard: true
+  alert_on_failure: false  # Don't spam alerts in dev
+  alert_on_success: false
+
+# GitHub disabled by default in dev
+github:
+  enable_github: false
+  auto_create_pr: false
+
+# Performance settings for development
+performance:
+  enable_caching: false  # Disable caching for testing
+  max_parallel_healings: 1

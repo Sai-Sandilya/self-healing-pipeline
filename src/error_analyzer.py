@@ -12,6 +12,7 @@ class ErrorCategory(Enum):
     DB_CONNECTION = "db_connection"
     SYNTAX_ERROR = "syntax_error"
     FILE_IO = "file_io"
+    DATA_QUALITY = "data_quality"
     UNKNOWN = "unknown"
 
 @dataclass
@@ -36,8 +37,18 @@ class ErrorAnalyzer:
         context = {}
         strategy = "Analyze the code and error to find a fix."
         
+        # 0. Check for Data Validation Errors
+        if "DataValidationError" in error_log or "Data Validation Failed" in error_log:
+            category = ErrorCategory.DATA_QUALITY
+            strategy = "Data quality issues detected. Consider cleaning the data (e.g., dropping nulls/duplicates) or relaxing validation rules."
+            # Extract specific errors
+            if "null values" in error_log:
+                context['issue'] = "null_values"
+            elif "duplicate values" in error_log:
+                context['issue'] = "duplicates"
+
         # 1. Check for Missing Dependencies
-        if "ModuleNotFoundError" in error_log or "ImportError" in error_log:
+        elif "ModuleNotFoundError" in error_log or "ImportError" in error_log:
             category = ErrorCategory.MISSING_DEPENDENCY
             match = re.search(r"No module named '(\w+)'", error_log)
             if match:

@@ -2,6 +2,9 @@ import pandas as pd
 import sys
 import os
 
+from src.validator import Validator, DataValidationError
+from src.validation_rules import NotNullRule, UniqueRule, TypeRule
+
 def run_pipeline():
     print('Starting ETL pipeline...')
     try:
@@ -24,6 +27,18 @@ def run_pipeline():
              missing = [c for c in required_cols if c not in df.columns]
              raise ValueError(f'Schema Mismatch! Missing columns after rename: {missing}. Did input columns change?')
 
+        # --- Data Validation ---
+        print('Running data validation...')
+        rules = [
+            UniqueRule('id'),
+            NotNullRule('name'),
+            NotNullRule('email_address')
+        ]
+        validator = Validator(rules)
+        validator.validate(df)
+        print('Data validation passed.')
+        # -----------------------
+
         # Some transformation
         df['created_at'] = pd.to_datetime(df['created_at'])
         
@@ -31,6 +46,9 @@ def run_pipeline():
         df.to_csv(output_path, index=False)
         print(f'Pipeline finished successfully. Data saved to {output_path}')
         return True
+    except DataValidationError as e:
+        print(f'Data Validation Failed:\n{e}')
+        raise e
     except Exception as e:
         print(f'Pipeline Failed: {e}')
         raise e
